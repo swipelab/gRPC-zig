@@ -7,6 +7,11 @@ const auth = @import("features/auth.zig");
 const streaming = @import("features/streaming.zig");
 const health = @import("features/health.zig");
 
+pub const Handler = struct {
+    name: []const u8,
+    handler_fn: *const fn ([]const u8, std.mem.Allocator) anyerror![]u8,
+};
+
 pub const GrpcServer = struct {
     allocator: std.mem.Allocator,
     address: std.net.Address,
