@@ -124,6 +124,8 @@ zig build benchmark
 
 The benchmarks automatically run in CI/CD on every pull request and provide performance feedback.
 
+📖 **[Detailed Benchmarking Guide](docs/benchmarking.md)**
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.

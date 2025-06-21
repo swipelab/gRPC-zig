@@ -14,7 +14,7 @@ zig build
 
 # Start server in background
 echo "Starting test server..."
-./zig-out/bin/grpc-server &
+./zig-out/bin/grpc-server-example &
 SERVER_PID=$!
 
 # Function to cleanup server on exit

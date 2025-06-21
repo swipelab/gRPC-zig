@@ -124,7 +124,7 @@ fn calculateLatencyStats(latencies: []f64) BenchmarkResults.LatencyStats {
     }
 
     // Sort latencies for percentile calculations
-    std.sort.pdq(f64, latencies, {}, comptime std.sort.asc(f64));
+    std.sort.heap(f64, latencies, {}, comptime std.sort.asc(f64));
 
     var sum: f64 = 0;
     for (latencies) |lat| {
@@ -204,7 +204,7 @@ fn runBenchmark(allocator: std.mem.Allocator, config: BenchmarkConfig) !Benchmar
 fn outputResults(allocator: std.mem.Allocator, results: BenchmarkResults, format: enum { json, text }) !void {
     switch (format) {
         .json => {
-            const json_string = try json.stringifyAlloc(allocator, results, .{ .whitespace = .indent_2 });
+            const json_string = try json.stringifyAlloc(allocator, results, .{ .whitespace = .{.indent = .{.space = 2}} });
             defer allocator.free(json_string);
             std.log.info("Benchmark Results (JSON):\n{s}", .{json_string});
         },

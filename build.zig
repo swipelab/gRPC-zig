@@ -46,6 +46,25 @@ pub fn build(b: *std.Build) void {
     const benchmark_step = b.step("benchmark", "Run benchmarks");
     benchmark_step.dependOn(&run_benchmark.step);
 
+    // Example executables
+    const server_example = b.addExecutable(.{
+        .name = "grpc-server-example",
+        .root_source_file = .{ .path = "examples/basic_server.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    server_example.addModule("spice", spice_mod);
+    b.installArtifact(server_example);
+
+    const client_example = b.addExecutable(.{
+        .name = "grpc-client-example", 
+        .root_source_file = .{ .path = "examples/basic_client.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    client_example.addModule("spice", spice_mod);
+    b.installArtifact(client_example);
+
     // Tests
     const tests = b.addTest(.{
         .root_source_file = .{ .path = "src/tests.zig" },
