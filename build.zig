@@ -27,6 +27,25 @@ pub fn build(b: *std.Build) void {
     client.addModule("spice", spice_mod);
     b.installArtifact(client);
 
+    // Benchmark executable
+    const benchmark = b.addExecutable(.{
+        .name = "grpc-benchmark",
+        .root_source_file = .{ .path = "src/benchmark.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    benchmark.addModule("spice", spice_mod);
+    b.installArtifact(benchmark);
+
+    // Benchmark run step
+    const run_benchmark = b.addRunArtifact(benchmark);
+    run_benchmark.step.dependOn(b.getInstallStep());
+    if (b.args) |args| {
+        run_benchmark.addArgs(args);
+    }
+    const benchmark_step = b.step("benchmark", "Run benchmarks");
+    benchmark_step.dependOn(&run_benchmark.step);
+
     // Tests
     const tests = b.addTest(.{
         .root_source_file = .{ .path = "src/tests.zig" },
