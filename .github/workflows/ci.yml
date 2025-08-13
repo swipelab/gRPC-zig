@@ -1,0 +1,257 @@
+name: CI/CD with Benchmarks
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Zig
+      uses: goto-bus-stop/setup-zig@v2
+      with:
+        version: 0.11.0
+    
+    - name: Restore Zig cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/zig
+          zig-cache
+        key: ${{ runner.os }}-zig-${{ hashFiles('**/*.zig', '**/build.zig.zon') }}
+        restore-keys: |
+          ${{ runner.os }}-zig-
+    
+    - name: Build project
+      run: zig build
+    
+    - name: Run tests
+      run: zig build test
+      
+    - name: Build benchmark tool
+      run: zig build benchmark
+      
+  benchmark:
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Zig
+      uses: goto-bus-stop/setup-zig@v2
+      with:
+        version: 0.11.0
+    
+    - name: Restore Zig cache
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/zig
+          zig-cache
+        key: ${{ runner.os }}-zig-${{ hashFiles('**/*.zig', '**/build.zig.zon') }}
+        restore-keys: |
+          ${{ runner.os }}-zig-
+    
+    - name: Build benchmark tool
+      run: zig build
+    
+    - name: Start gRPC server in background
+      run: |
+        # Start the server in the background
+        timeout 30 ./zig-out/bin/grpc-server-example &
+        SERVER_PID=$!
+        echo "SERVER_PID=$SERVER_PID" >> $GITHUB_ENV
+        
+        # Wait for server to start
+        sleep 5
+        
+        # Check if server is running
+        if ! kill -0 $SERVER_PID 2>/dev/null; then
+          echo "Server failed to start"
+          exit 1
+        fi
+    
+    - name: Run benchmarks
+      run: |
+        # Run benchmark with reduced load for CI
+        timeout 60 ./zig-out/bin/grpc-benchmark \
+          --host localhost \
+          --port 50051 \
+          --requests 100 \
+          --clients 5 \
+          --size 512 \
+          --output json > benchmark_results.json
+        
+        # Also output in text format for logs
+        timeout 60 ./zig-out/bin/grpc-benchmark \
+          --host localhost \
+          --port 50051 \
+          --requests 100 \
+          --clients 5 \
+          --size 512 \
+          --output text
+      continue-on-error: true
+    
+    - name: Stop server
+      run: |
+        if [ ! -z "$SERVER_PID" ]; then
+          kill $SERVER_PID || true
+        fi
+    
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-results-${{ github.sha }}
+        path: benchmark_results.json
+        retention-days: 30
+      if: always()
+    
+    - name: Post benchmark results to PR
+      uses: actions/github-script@v6
+      if: github.event_name == 'pull_request' && always()
+      with:
+        script: |
+          const fs = require('fs');
+          
+          try {
+            const results = JSON.parse(fs.readFileSync('benchmark_results.json', 'utf8'));
+            
+            const comment = `## 🚀 Benchmark Results
+            
+            **Performance Summary:**
+            - **Requests/sec:** ${results.requests_per_second.toFixed(2)}
+            - **Total Requests:** ${results.total_requests}
+            - **Success Rate:** ${((results.successful_requests / results.total_requests) * 100).toFixed(1)}%
+            - **Error Rate:** ${(results.error_rate * 100).toFixed(2)}%
+            
+            **Latency Statistics:**
+            - **Average:** ${results.latency_stats.avg_ms.toFixed(2)}ms
+            - **95th percentile:** ${results.latency_stats.p95_ms.toFixed(2)}ms
+            - **99th percentile:** ${results.latency_stats.p99_ms.toFixed(2)}ms
+            - **Min/Max:** ${results.latency_stats.min_ms.toFixed(2)}ms / ${results.latency_stats.max_ms.toFixed(2)}ms
+            
+            **Configuration:**
+            - Concurrent clients: 5
+            - Requests per client: 100
+            - Payload size: 512 bytes
+            
+            ---
+            *Benchmark run on: ${new Date(results.timestamp * 1000).toISOString()}*
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+          } catch (error) {
+            console.log('Failed to post benchmark results:', error);
+            
+            // Post a fallback comment
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '## 🚀 Benchmark Results\n\n❌ Benchmark failed to complete or results could not be parsed. Check the CI logs for details.'
+            });
+          }
+
+  performance-regression-check:
+    runs-on: ubuntu-latest
+    needs: benchmark
+    if: github.event_name == 'pull_request'
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Download benchmark results
+      uses: actions/download-artifact@v3
+      with:
+        name: benchmark-results-${{ github.sha }}
+        path: ./current
+      continue-on-error: true
+    
+    - name: Check for performance regression
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          
+          try {
+            const currentResults = JSON.parse(fs.readFileSync('./current/benchmark_results.json', 'utf8'));
+            
+            // Define performance thresholds
+            const thresholds = {
+              requests_per_second_min: 1000,  // Minimum acceptable RPS
+              latency_p95_max: 100,           // Maximum acceptable P95 latency (ms)
+              error_rate_max: 0.05            // Maximum acceptable error rate (5%)
+            };
+            
+            let warnings = [];
+            let errors = [];
+            
+            // Check performance against thresholds
+            if (currentResults.requests_per_second < thresholds.requests_per_second_min) {
+              warnings.push(`⚠️ Low throughput: ${currentResults.requests_per_second.toFixed(2)} RPS (threshold: ${thresholds.requests_per_second_min} RPS)`);
+            }
+            
+            if (currentResults.latency_stats.p95_ms > thresholds.latency_p95_max) {
+              warnings.push(`⚠️ High latency: P95 ${currentResults.latency_stats.p95_ms.toFixed(2)}ms (threshold: ${thresholds.latency_p95_max}ms)`);
+            }
+            
+            if (currentResults.error_rate > thresholds.error_rate_max) {
+              errors.push(`❌ High error rate: ${(currentResults.error_rate * 100).toFixed(2)}% (threshold: ${(thresholds.error_rate_max * 100).toFixed(1)}%)`);
+            }
+            
+            if (errors.length > 0 || warnings.length > 0) {
+              let comment = '## 🚨 Performance Analysis\n\n';
+              
+              if (errors.length > 0) {
+                comment += '**Critical Issues:**\n';
+                errors.forEach(error => comment += `${error}\n`);
+                comment += '\n';
+              }
+              
+              if (warnings.length > 0) {
+                comment += '**Warnings:**\n';
+                warnings.forEach(warning => comment += `${warning}\n`);
+                comment += '\n';
+              }
+              
+              comment += '**Recommendations:**\n';
+              comment += '- Review recent changes for performance impact\n';
+              comment += '- Run local benchmarks to confirm results\n';
+              comment += '- Consider optimizing critical code paths\n';
+              
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+              
+              if (errors.length > 0) {
+                core.setFailed('Performance regression detected');
+              }
+            } else {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: '## ✅ Performance Analysis\n\nAll performance metrics are within acceptable thresholds.'
+              });
+            }
+          } catch (error) {
+            console.log('Performance regression check failed:', error);
+          }

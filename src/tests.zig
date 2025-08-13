@@ -2,6 +2,7 @@ const std = @import("std");
 const testing = std.testing;
 const proto = @import("proto/service.zig");
 const spice = @import("spice");
+const benchmark = @import("benchmark.zig");
 
 test "HelloRequest encode/decode" {
     const request = proto.HelloRequest{ .name = "test" };
@@ -23,4 +24,19 @@ test "HelloResponse encode/decode" {
     var reader = spice.ProtoReader.init(buf[0..writer.pos]);
     const decoded = try proto.HelloResponse.decode(&reader);
     try testing.expectEqualStrings("Hello, test!", decoded.message);
+}
+
+test "benchmark handler" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const request = "test_request";
+    const response = try benchmark.benchmarkHandler(request, allocator);
+    defer allocator.free(response);
+
+    // Verify response contains the request
+    try testing.expect(std.mem.indexOf(u8, response, request) != null);
+    // Verify response contains timestamp
+    try testing.expect(std.mem.indexOf(u8, response, "processed at") != null);
 }

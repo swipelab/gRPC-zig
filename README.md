@@ -89,6 +89,43 @@ gRPC Go     │██████████████░░░░│  3.8ms
 gRPC C++    │████████████████░░│  4.2ms
 ```
 
+### Running Benchmarks
+
+The repository includes a built-in benchmarking tool to measure performance:
+
+```bash
+# Build the benchmark tool
+zig build
+
+# Run benchmarks with default settings
+zig build benchmark
+
+# Run with custom parameters
+./zig-out/bin/grpc-benchmark --help
+./zig-out/bin/grpc-benchmark --requests 1000 --clients 10 --output json
+
+# Or use the convenient script
+./scripts/run_benchmark.sh
+```
+
+**Benchmark Options:**
+- `--host <host>`: Server host (default: localhost)
+- `--port <port>`: Server port (default: 50051)  
+- `--requests <n>`: Number of requests per client (default: 1000)
+- `--clients <n>`: Number of concurrent clients (default: 10)
+- `--size <bytes>`: Request payload size (default: 1024)
+- `--output <format>`: Output format: text|json (default: text)
+
+**Benchmark Metrics:**
+- Latency statistics (min, max, average, P95, P99)
+- Throughput (requests per second)
+- Error rates and success rates
+- Total execution time
+
+The benchmarks automatically run in CI/CD on every pull request and provide performance feedback.
+
+📖 **[Detailed Benchmarking Guide](docs/benchmarking.md)**
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
