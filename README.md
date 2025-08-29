@@ -62,20 +62,17 @@ try stream.push("Final message", true);
 
 ## 🔧 Installation
 
-1. Add to your `build.zig.zon`:
+1. Fetch the dependency:
 
-```zig
-.dependencies = .{
-    .grpc_zig = .{
-        .url = "https://github.com/ziglana/grpc-zig/archive/refs/tags/v0.1.0.tar.gz",
-    },
-},
+```sh
+zig fetch --save "git+https://ziglana/grpc-zig/gRPC-zig#main"
 ```
 
 2. Add to your `build.zig`:
 
 ```zig
 const grpc_zig = b.dependency("grpc_zig", .{});
+
 exe.addModule("grpc", grpc_zig.module("grpc"));
 ```
 
