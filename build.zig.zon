@@ -6,4 +6,9 @@
             .url = "https://github.com/judofyr/spice/archive/refs/heads/main.tar.gz",
         },
     },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    }
 }
